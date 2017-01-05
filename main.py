@@ -1,9 +1,10 @@
 from pprint import pprint
+from urllib import parse
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import json
 
-from flask import Flask, Response
+from flask import Flask, Response, render_template_string, url_for
 import os
 
 app = Flask(__name__)
@@ -56,16 +57,37 @@ class LoginContext:
         request = self._url_request("https://digital.freitag.de/padnity/sso/logout?callback=blub")
         request.close()
 
-
-@app.route('/download/<int:offset>')
-def download(offset):
+@app.route('/')
+def index():
     login_context = login()
-    link = login_context.get_download_link(offset)
+    issues = login_context.list_issues()
 
-    request = login_context._url_request(link)
+    return render_template_string("""
+        <h1>Welcome to Freitag Viewer!</h1>
+        Here are all available issues:
+            <ul>
+                {% for issue in issues %}
+                    <li>
+                        {% if issue.download_link != '' %}
+                        <a href="{{ url_for('download', cookie=login_context.session_secret, name=issue.name, url=issue.download_link) }}">
+                        {% endif %}
+                            {{ issue.published }} - {{ issue.name }}
+                        {% if issue.download_link != '' %}
+                        </a>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            <ul>
+    """, issues=issues, login_context=login_context)
+
+@app.route('/download/<string:cookie>/<string:name>/<path:url>')
+def download(cookie, name, url):
+    login_context = LoginContext(cookie)
+
+    request = login_context._url_request(url)
     headers = {
         "Content-Type" : "application/pdf",
-        "Content-Disposition" : "attachment; filename*=UTF-8'%s.pdf" % offset
+        "Content-Disposition" : "attachment; filename*=UTF-8'%s.pdf" % parse.quote_plus(name)
     }
     def generate():
         while True:
@@ -98,5 +120,4 @@ def login():
 
 
 if __name__ == '__main__':
-    # list_download_links(list_issues(login()))
     app.run("0.0.0.0", 9999)
