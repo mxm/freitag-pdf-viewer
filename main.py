@@ -16,29 +16,53 @@ GENERAL_POST = {
     'vs' : '2.0',
 }
 
-HEADERS = {
+GENERAL_HEADERS = {
     "User-Agent" : "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; FSL 7.0.6.01001",
     "Referer" : "https://digital.freitag.de/"
 }
 
-CACHED_LINKS = {}
 
-def url_request(url, headers = {}, **kwargs):
-    request = Request(url, urlencode(kwargs).encode(), headers)
-    return urlopen(request)
+class LoginContext:
 
-@app.route('/')
-def hello_world():
-    return 'Hello, World!'
+    def __init__(self, session_secret):
+        self.session_secret = session_secret
+        self.headers = GENERAL_HEADERS.copy()
+        self.headers['Cookie'] = "boSession=%s" % session_secret
+
+    def _url_request(self, url):
+        request = Request(url, urlencode(GENERAL_POST).encode(), self.headers)
+        return urlopen(request)
+
+    def list_issues(self):
+        issues_url = "https://digital.freitag.de/padnity/issues?callback=blub"
+
+        response2 = self._url_request(issues_url)
+        json_response = response2.read().decode()[5:-1]
+        json_response = json.loads(json_response)
+        pprint(json_response)
+        return json_response
+
+    def get_download_link(self, i, issues_list = None):
+        if not issues_list:
+            issues_list = self.list_issues()
+        return issues_list[i]['download_link']
+
+    def list_download_links(self):
+        issues_list = self.list_issues()
+        for i, issue in enumerate(issues_list):
+            print(i, self.get_download_link(i, issues_list))
+
+    def logout(self):
+        request = self._url_request("https://digital.freitag.de/padnity/sso/logout?callback=blub")
+        request.close()
+
 
 @app.route('/download/<int:offset>')
 def download(offset):
-    global CACHED_LINKS
-    if not offset in CACHED_LINKS.keys():
-        link = get_download_link(offset, list_issues(login()))
-        CACHED_LINKS[offset] = link
+    login_context = login()
+    link = login_context.get_download_link(offset)
 
-    request = url_request(link, HEADERS, **GENERAL_POST)
+    request = login_context._url_request(link)
     headers = {
         "Content-Type" : "application/pdf",
         "Content-Disposition" : "attachment; filename*=UTF-8'%s.pdf" % offset
@@ -49,8 +73,9 @@ def download(offset):
             if len(bytes) != 0:
                 yield bytes
             else:
+                login_context.logout()
                 break
-    return Response(generate(), headers=headers, mimetype="")
+    return Response(generate(), headers=headers)
 
 
 def login():
@@ -60,37 +85,18 @@ def login():
         'username' : user,
         'userpass' : password,
     })
-    response = url_request(login_url, **post_fields)
+    request = Request(login_url, urlencode(post_fields).encode())
+    response = urlopen(request)
     json_response = response.read().decode()[5:-1]
     json_response = json.loads(json_response)
     print(json_response)
 
     boSession = json_response['sso_session_id']
-    HEADERS.update ({
-        'Cookie': "boSession=%s" % boSession
-    })
-
     print(boSession)
-    return boSession
 
-def list_issues(boSession):
-    issues_url = "https://digital.freitag.de/padnity/issues?callback=blub"
-
-    response2 = url_request(issues_url, HEADERS, **GENERAL_POST)
-    json_response = response2.read().decode()[5:-1]
-    json_response = json.loads(json_response)
-    pprint(json_response)
-    return json_response
-
-def get_download_link(i, issues_list):
-    return issues_list[i]['download_link']
-
-def list_download_links(issues_list):
-    for i, issue in enumerate(issues_list):
-        print(i, get_download_link(i, issues_list))
+    return LoginContext(boSession)
 
 
 if __name__ == '__main__':
     # list_download_links(list_issues(login()))
-
     app.run("0.0.0.0", 9999)
