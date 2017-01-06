@@ -1,3 +1,4 @@
+import urllib
 from pprint import pprint
 from urllib import parse
 from urllib.parse import urlencode
@@ -68,6 +69,9 @@ def index():
     login_context = login()
     issues = login_context.list_issues()
 
+    for issue in issues:
+        issue['encoded_download_link'] = urllib.parse.quote_plus(issue['download_link'])
+
     return render_template_string("""
         <h1>Welcome to Freitag Viewer!</h1>
         Here are all available issues:
@@ -75,7 +79,10 @@ def index():
                 {% for issue in issues %}
                     <li>
                         {% if issue.download_link != '' %}
-                        <a href="{{ url_for('download', cookie=login_context.session_secret, name=issue.name, url=issue.download_link) }}">
+                        <a href="{{ url_for('download',
+                                        cookie=login_context.session_secret,
+                                        name=issue.name,
+                                        encoded_url=issue.encoded_download_link) }}">
                         {% endif %}
                             {{ issue.published }} - {{ issue.name }}
                         {% if issue.download_link != '' %}
@@ -86,11 +93,11 @@ def index():
             <ul>
     """, issues=issues, login_context=login_context)
 
-@app.route(app_prefix + '/download/<string:cookie>/<string:name>/<path:url>')
-def download(cookie, name, url):
+@app.route(app_prefix + '/download/<string:cookie>/<string:name>/<string:encoded_url>')
+def download(cookie, name, encoded_url):
     login_context = LoginContext(cookie)
 
-    request = login_context._url_request(url)
+    request = login_context._url_request(urllib.parse.unquote(encoded_url))
     headers = {
         "Content-Type" : "application/pdf",
         "Content-Disposition" : "attachment; filename*=UTF-8'%s.pdf" % parse.quote_plus(name)
