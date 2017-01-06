@@ -4,13 +4,18 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import json
 
-from flask import Flask, Response, render_template_string, url_for
+from flask import Flask, Response, render_template_string
 import os
+
+# Insert your credentials
+user = os.environ['FREITAG_USER']
+password = os.environ['FREITAG_PASS']
 
 app = Flask(__name__)
 
-user = os.environ['FREITAG_USER']
-password = os.environ['FREITAG_PASS']
+# enable the app to be mounted in a sub path
+app_prefix = os.environ.get('APPLICATION_ROOT', '')
+
 
 GENERAL_POST = {
     'apikey': 'BsAvuNIFHuEXbvqPpApIhLkscQbdPYypkYPuGirSLRXkmfVLLSfdoNKBcEQDkZEH',
@@ -57,7 +62,8 @@ class LoginContext:
         request = self._url_request("https://digital.freitag.de/padnity/sso/logout?callback=blub")
         request.close()
 
-@app.route('/')
+
+@app.route(app_prefix + '/')
 def index():
     login_context = login()
     issues = login_context.list_issues()
@@ -80,7 +86,7 @@ def index():
             <ul>
     """, issues=issues, login_context=login_context)
 
-@app.route('/download/<string:cookie>/<string:name>/<path:url>')
+@app.route(app_prefix + '/download/<string:cookie>/<string:name>/<path:url>')
 def download(cookie, name, url):
     login_context = LoginContext(cookie)
 
